@@ -31,9 +31,9 @@
     background: var(--bg);
     color: #cfc9e8;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    grid-template-rows: 1fr auto 1fr; /* main stays centred, the credit takes the foot and can't overlap it */
+    justify-items: center;
     overflow: hidden;
     touch-action: pinch-zoom;
   }
@@ -64,6 +64,7 @@
   }
 
   main {
+    grid-row: 2;
     position: relative;
     text-align: center;
     z-index: 1;
@@ -116,9 +117,35 @@
     50%      { opacity: 0.92; }
   }
 
+  /* the foot credit: what Athenema presents. Still, so only "Present." breathes */
+  .work {
+    grid-row: 3;
+    align-self: end;
+    position: relative;
+    z-index: 1;
+    padding: 1rem 1rem 1.5rem;
+    font-size: clamp(0.75rem, 1.4vw, 0.85rem);
+    font-weight: 300;
+    letter-spacing: 0.35em;
+    text-indent: 0.35em;
+    color: #cfc9e8;
+    opacity: 0.74;
+    text-decoration: none;
+    transition: color 0.6s ease, text-shadow 0.6s ease, opacity 0.6s ease;
+    animation: settle 1.2s ease-out 1.4s backwards;
+  }
+  @keyframes settle { from { opacity: 0; } }
+  .work:hover, .work:focus-visible {
+    color: var(--amber);
+    opacity: 1;
+    text-shadow: 0 0 18px rgba(245, 162, 74, 0.45);
+  }
+  .work:focus-visible { outline: 1px solid var(--amber); outline-offset: -0.5rem; }
+
   @media (prefers-reduced-motion: reduce) {
-    body::before, h1, .present { animation: none; }
+    body::before, h1, .present, .work { animation: none; }
     .present { opacity: 0.8; }
+    .work { transition: none; }
   }
 </style>
 </head>
@@ -130,6 +157,7 @@
     <h1>Athenema</h1>
     <p class="present">Present.</p>
   </main>
+  <a class="work" href="https://uptheleagues.com/">Up the Leagues</a>
 <script>
 (() => {
   // assets/logo-v3-original.png as dots, solved by tools/fit.py
