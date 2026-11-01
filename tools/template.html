@@ -76,9 +76,11 @@
     max-width: 520px;
     aspect-ratio: 1;
     margin: 0 auto;
+    transform: translateX(-9%); /* optical centre: the bright face is on the right and she looks that way */
   }
-  /* no JS or no WebGL: the still mark */
+  /* no JS or no WebGL: the still mark, framed further left, so it lands in the same place */
   .mark.still {
+    transform: translateX(-3.5%);
     background: url("logo.webp") center / 142% no-repeat;
     -webkit-mask-image: radial-gradient(circle at 50% 50%, black 52%, transparent 72%);
             mask-image: radial-gradient(circle at 50% 50%, black 52%, transparent 72%);
