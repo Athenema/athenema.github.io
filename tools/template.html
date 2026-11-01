@@ -137,7 +137,7 @@
   const VERT = `
     attribute vec2 h;   // home: figure units, -.5 to .5 (motes: viewport 0 to 1)
     attribute vec4 c;   // glow rgb, sigma in figure units
-    attribute vec3 s;   // seed 0 to 1, dust 0 to 1 (2 for a mote), heat
+    attribute vec3 s;   // seed 0 to 1, dust 0 to 1 (2 for a mote, 3 for an ember), heat
     uniform vec3 V;     // viewport w, h, figure scale (px per unit)
     uniform vec2 C;     // figure centre, px
     uniform vec3 P;     // pointer in figure units, strength
@@ -147,12 +147,21 @@
     varying float w, k;
     const float TAU = 6.28318;
     void main() {
-      float seed = s.x, dust = min(s.y, 1.), b;
+      float seed = s.x, dust = min(s.y, 1.), b, cool = 1.;
       vec2 p;
-      if (s.y > 1.5) {
+      if (s.y > 2.5) {
+        // a bead on the profile sheds an ember: it lifts off the edge, cools from gold to red, gone
+        float life = fract(t / (7. + 8. * fract(seed * 7.)) + seed * 5.);
+        vec2 dir = normalize(h - vec2(-.1, -.2));
+        p = h + dir * (.012 + life * (.06 + .13 * fract(seed * 11.)));
+        p += .02 * life * vec2(sin(t * .6 + seed * 30.), cos(t * .5 + seed * 70.));
+        p = C + p * V.z;
+        b = 1.5 * smoothstep(0., .1, life) * (1. - smoothstep(.6, 1., life)) * smoothstep(1.2, 3., t);
+        cool = 1. - life;
+      } else if (s.y > 1.5) {
         vec2 q = fract(h + vec2(.0035 - seed * .007, -.006 - seed * .006) * t);
         p = q * V.xy + 14. * vec2(sin(t * .13 + seed * 80.), cos(t * .11 + seed * 50.));
-        b = smoothstep(0., .08, q.y) * smoothstep(1., .92, q.y) * smoothstep(0., .08, q.x) * smoothstep(1., .92, q.x);
+        b = smoothstep(0., .08, q.y) * (1. - smoothstep(.92, 1., q.y)) * smoothstep(0., .08, q.x) * (1. - smoothstep(.92, 1., q.x));
         b *= (.75 + .45 * sin(t * (.2 + seed * .3) + seed * 40.)) * smoothstep(.5, 3.5, t);
       } else {
         // condense: arrive from a loose cloud, most of the travel in the first half second
@@ -162,7 +171,7 @@
         vec2 home = h + (1. - e) * (h * .9 + (.12 + .3 * fract(seed * 13.)) * vec2(cos(a), sin(a)));
 
         // the profile holds, the hair flows. Everything here moves as one, so lines stay lines
-        float loose = smoothstep(.22, -.42, h.x + .25 * h.y);
+        float loose = 1. - smoothstep(-.42, .22, h.x + .25 * h.y);
         vec2 q = h * 3.2;
         vec2 flow = vec2(
           sin(q.y + t * .29) + .55 * sin(q.y * 2.1 - t * .21 + q.x),
@@ -175,7 +184,7 @@
         if (dust > .5 && fract(seed * 29.) < .12) {
           float life = fract(t / (19. + 14. * fract(seed * 7.)) + seed * 3.);
           vec2 dir = normalize(vec2(-.55 - .5 * fract(seed * 11.), -.75 + fract(seed * 17.)));
-          p += A * dir * life * life * (.04 + .14 * loose) * smoothstep(1., .94, life) * smoothstep(0., 2.5, t);
+          p += A * dir * life * life * (.04 + .14 * loose) * (1. - smoothstep(.94, 1., life)) * smoothstep(0., 2.5, t);
         }
 
         // the pointer barely registers: dust leans a few pixels away, lines do not break
@@ -190,7 +199,7 @@
       }
       float sig = c.a * V.z * D, sd = max(sig, .5), gain = b * sig * sig / (sd * sd);
       v = c.rgb * gain;
-      w = s.z * gain;
+      w = s.z * gain * cool;
       float size = max(sd * 6., 3.);
       k = size * size / (8. * sd * sd);
       gl_Position = vec4(p / V.xy * vec2(2., -2.) + vec2(-1., 1.), 0., 1.);
@@ -229,7 +238,7 @@
   };
   // planes, sorted by y: dy | x low | x high and scale | glow and heat
   const MOTES = 80, STRIDE = 9, W = 1253, CX = 578.5, CY = 627.5, SPAN = 877;
-  const data = new Float32Array((TOTAL + MOTES) * STRIDE);
+  const EMBER_ROWS = 90, data = new Float32Array((TOTAL + MOTES + EMBER_ROWS * 2) * STRIDE);
   let count = MOTES, seed = 0.5;
   const rand = () => (seed = (seed * 9301 + 0.49297) % 1); // seeded: same field every load
   for (let i = 0; i < MOTES; i++) {
@@ -258,8 +267,28 @@
       data[o + 7] = scale < 2 ? Math.max(1 - amp / 0.6, 0) : 0;
       data[o + 8] = ((p >> 5) / 7) ** 2 * 3;
     }
-    gl.bufferSubData(gl.ARRAY_BUFFER, from * STRIDE * 4, data.subarray(from * STRIDE, count * STRIDE));
+    upload(from);
     if (calm) draw(20);
+  }
+
+  const upload = from => gl.bufferSubData(gl.ARRAY_BUFFER, from * STRIDE * 4, data.subarray(from * STRIDE, count * STRIDE));
+
+  // the rightmost bright bead on each row is the outer edge of the face: it sheds the embers
+  function embers() {
+    const edge = new Map(), from = count;
+    for (let i = MOTES; i < count; i++) {
+      const o = i * STRIDE, row = Math.round(data[o + 1] * EMBER_ROWS);
+      if (data[o] > 0.1 && data[o + 2] > 0.4 && (!edge.has(row) || data[o] > data[edge.get(row) * STRIDE])) edge.set(row, i);
+    }
+    for (const i of edge.values()) {
+      const o = count++ * STRIDE;
+      data.set(data.subarray(i * STRIDE, (i + 1) * STRIDE), o);
+      data[o + 5] = (1.3 + rand() * 1.1) / SPAN;
+      data[o + 6] = rand();
+      data[o + 7] = 3;
+      data[o + 8] = 0.9;
+    }
+    upload(from);
   }
 
   const pointer = { x: 0, y: 0, on: 0, ex: 0, ey: 0, es: 0 };
@@ -345,6 +374,7 @@
   init();
   window.dots = add;
   add(__N1__, "__D1__");
+  if (!calm) embers();
 })();
 </script>
 <script>dots(__N2__, "__D2__")</script>

@@ -3,12 +3,15 @@
 Dots ship in two inline scripts. The first carries the renderer and the dots that matter
 most and is sized to land in the first TCP flight, about 14KB. The second streams in
 behind it, so the figure starts one round trip sooner and still ends up complete.
+
+Run from the repo root: edit tools/template.html, then python3 tools/build.py to write index.html.
+To re-solve the dots against the logo first: python3 tools/fit.py 6000 16 tools/dots.json
 """
 import base64, gzip, json, os, sys
 import numpy as np
 
-src = sys.argv[1] if len(sys.argv) > 1 else 'tools/dots.json'
-out = sys.argv[2] if len(sys.argv) > 2 else 'mock'
+src = 'tools/dots.json'
+out = '.'
 FIRST_FLIGHT = 13600
 os.makedirs(out, exist_ok=True)
 d = json.load(open(src))
