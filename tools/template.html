@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athenema</title>
+<meta name="description" content="Present.">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Athenema">
+<meta property="og:title" content="Athenema">
+<meta property="og:description" content="Present.">
+<meta property="og:url" content="https://athenema.com/">
+<meta property="og:image" content="https://athenema.com/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Athenema">
+<meta name="twitter:description" content="Present.">
+<meta name="twitter:image" content="https://athenema.com/og.jpg">
+<style>
+  :root {
+    --bg: #05041a;
+    --amber: #f5a24a;
+    --magenta: #e0409a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: #cfc9e8;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    touch-action: pinch-zoom;
+  }
+
+  /* atmospheric haze, 2049-style */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -20%;
+    background:
+      radial-gradient(ellipse 60% 45% at 50% 38%, rgba(224, 64, 154, 0.10), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 62% 30%, rgba(245, 162, 74, 0.08), transparent 60%),
+      radial-gradient(ellipse 80% 60% at 50% 110%, rgba(30, 20, 80, 0.5), transparent 70%);
+    animation: haze 14s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes haze {
+    from { opacity: 0.7; transform: translateX(-1.5%); }
+    to   { opacity: 1;   transform: translateX(1.5%); }
+  }
+
+  #dots {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  main {
+    position: relative;
+    text-align: center;
+    z-index: 1;
+    padding-inline: 16px;
+  }
+
+  /* holds the figure's place; the dots are drawn into this box */
+  .mark {
+    width: min(46vh, 74vw);
+    max-width: 520px;
+    aspect-ratio: 1;
+    margin: 0 auto;
+  }
+  /* no JS or no WebGL: the still mark */
+  .mark.still {
+    background: url("logo.webp") center / 142% no-repeat;
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, black 52%, transparent 72%);
+            mask-image: radial-gradient(circle at 50% 50%, black 52%, transparent 72%);
+  }
+
+  h1 {
+    margin-top: 2.6rem;
+    font-size: clamp(1.1rem, 3.2vw, 1.9rem);
+    font-weight: 200;
+    text-transform: uppercase;
+    letter-spacing: 0.85em;
+    text-indent: 0.85em; /* recenters tracked text */
+    color: #e8e2f5;
+    text-shadow: 0 0 24px rgba(224, 64, 154, 0.35);
+    animation: track 2.4s cubic-bezier(.16, 1, .3, 1) both;
+  }
+  @keyframes track {
+    from { letter-spacing: 0.45em; text-indent: 0.45em; opacity: 0; }
+  }
+
+  .present {
+    margin-top: 2.2rem;
+    font-size: clamp(0.75rem, 1.4vw, 0.85rem);
+    font-weight: 300;
+    letter-spacing: 0.35em;
+    text-indent: 0.35em;
+    color: #cfc9e8;
+    animation: arrive 1.6s ease-out 1.4s both, fade 5s ease-in-out 3s infinite;
+  }
+  @keyframes arrive { from { opacity: 0; } to { opacity: 0.65; } }
+  @keyframes fade {
+    0%, 100% { opacity: 0.65; }
+    50%      { opacity: 0.92; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body::before, h1, .present { animation: none; }
+    .present { opacity: 0.8; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="dots" role="img" aria-label="Athenema"></canvas>
+  <main>
+    <div class="mark still"></div>
+    <script>document.querySelector('.mark').classList.remove('still')</script>
+    <h1>Athenema</h1>
+    <p class="present">Present.</p>
+  </main>
+<script>
+(() => {
+  // Every dot of assets/logo-v3-original.png, regenerate with assets/extract-dots.py
+  const N = __N__, GRID = __GRID__, HUES = "__PAL__", DOTS = "__DATA__";
+
+  const VERT = `
+    attribute vec2 h;   // home: figure units, -.5 to .5 (motes: viewport 0 to 1)
+    attribute vec4 c;   // rgb, radius in figure units
+    attribute vec2 s;   // seed 0..1, mote flag
+    uniform vec3 V;     // viewport w, h, figure scale (px per unit)
+    uniform vec2 C;     // figure centre, px
+    uniform vec3 P;     // pointer in figure units, strength
+    uniform vec2 T;     // parallax
+    uniform float t, D, A; // seconds, device pixels per css pixel, motion amount
+    varying vec3 v;
+    varying float heat;
+    const float TAU = 6.28318;
+    void main() {
+      float seed = s.x, b, px_r, dust = 1. - smoothstep(.0022, .0042, c.a);
+      vec2 p;
+      if (s.y > .5) {
+        vec2 q = fract(h + vec2(.0035 - seed * .007, -.006 - seed * .006) * t);
+        p = q * V.xy + 14. * vec2(sin(t * .13 + seed * 80.), cos(t * .11 + seed * 50.));
+        b = smoothstep(0., .08, q.y) * smoothstep(1., .92, q.y) * smoothstep(0., .08, q.x) * smoothstep(1., .92, q.x);
+        b *= (.75 + .45 * sin(t * (.2 + seed * .3) + seed * 40.)) * smoothstep(.5, 3.5, t);
+        px_r = c.a * V.z;
+      } else {
+        // condense: arrive from a loose cloud, most of the travel in the first half second
+        float e = clamp((t - seed * .3) / 1.4, 0., 1.);
+        e = 1. - pow(1. - e, 4.);
+        float a = seed * 917.;
+        vec2 home = h + (1. - e) * (h * .9 + (.12 + .3 * fract(seed * 13.)) * vec2(cos(a), sin(a)));
+
+        // the profile holds, the hair flows: looser the further back from the face
+        float loose = smoothstep(.22, -.42, h.x + .25 * h.y);
+        vec2 q = h * 3.2;
+        vec2 flow = vec2(
+          sin(q.y + t * .29) + .55 * sin(q.y * 2.1 - t * .21 + q.x),
+          cos(q.x * 1.3 + t * .25) + .55 * sin(q.x * 2.3 + q.y + t * .17));
+        p = home + A * flow * (.001 + .012 * loose) * (1. + dust);
+        p += A * .0016 * (1. + 2.2 * dust) * vec2(sin(t * (.35 + seed * .5) + seed * 40.), cos(t * (.3 + seed * .5) + seed * 90.));
+
+        // a share of the dust lets go, drifts up and away, and condenses back
+        if (dust > .5 && fract(seed * 29.) < .12) {
+          float life = fract(t / (19. + 14. * fract(seed * 7.)) + seed * 3.);
+          vec2 dir = normalize(vec2(-.55 - .5 * fract(seed * 11.), -.75 + fract(seed * 17.)));
+          p += A * dir * life * life * (.04 + .14 * loose) * smoothstep(1., .94, life) * smoothstep(0., 2.5, t);
+        }
+
+        // depth
+        p += A * T * (.35 + 1.1 * fract(seed * 23.)) * (1. + .6 * loose);
+
+        // part around the pointer
+        vec2 g = p - P.xy;
+        p += A * g / (length(g) + .02) * .05 * P.z * exp(-dot(g, g) / .022) * (1. + dust);
+
+        p = C + p * V.z;
+
+        // a slow wave of light, the old 7s breath, travels from the face back through the hair
+        float w = .5 + .5 * sin(TAU * t / 7. + h.x * 3. + h.y * 1.2);
+        b = mix(1., mix(.78, 1.22, w) * (1. + dust * .4 * sin(t * (.5 + seed) + seed * 60.)), A) * smoothstep(0., .55, e);
+        px_r = max(c.a * V.z, .55);
+      }
+      v = c.rgb * b;
+      heat = b * smoothstep(.0018, .0048, c.a);
+      gl_Position = vec4(p / V.xy * vec2(2., -2.) + vec2(-1., 1.), 0., 1.);
+      gl_PointSize = min((px_r * 8. + 3.) * D, 64.);
+    }`;
+
+  const FRAG = `
+    precision mediump float;
+    varying vec3 v;
+    varying float heat;
+    void main() {
+      float r2 = dot(gl_PointCoord - .5, gl_PointCoord - .5) * 4.;
+      if (r2 > 1.) discard;
+      float edge = 1. - r2;
+      vec3 col = v * (exp(-r2 * 44.) * 1.5 + (.05 + .16 * heat) * exp(-r2 * 5.) * edge)
+               + mix(v, vec3(1.), .4) * heat * exp(-r2 * 120.) * .8;
+      gl_FragColor = vec4(col, max(col.r, max(col.g, col.b)));
+    }`;
+
+  const canvas = document.getElementById('dots');
+  const mark = document.querySelector('.mark');
+  const still = () => mark.classList.add('still');
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const gl = canvas.getContext('webgl', { antialias: false, powerPreference: 'low-power' });
+  if (!gl) return still();
+
+  const bytes64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+  const bytes = bytes64(DOTS), hues = bytes64(HUES);
+  // colour is a function of position: bilinear lookup in a coarse grid over the figure
+  const hue = (x, y, c) => {
+    const gx = x * (GRID - 1), gy = y * (GRID - 1), ix = Math.min(gx | 0, GRID - 2), iy = Math.min(gy | 0, GRID - 2);
+    const fx = gx - ix, fy = gy - iy, at = (a, b) => hues[(b * GRID + a) * 3 + c] / 255;
+    return (at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy) + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy;
+  };
+  // planes, sorted by y: dy | x low | x high and weight
+  const MOTES = 80, STRIDE = 8, data = new Float32Array((N + MOTES) * STRIDE);
+  let y = 0, seed = 0.5;
+  const rand = () => (seed = (seed * 9301 + 0.49297) % 1); // seeded: same field every load
+  for (let i = 0; i < N; i++) {
+    const m = bytes[i + N * 2], k = (m >> 2) / 63;
+    y += bytes[i];
+    const x = bytes[i + N] | ((m & 3) << 8);
+    const gain = 0.1 + 0.9 * k ** 2.2;
+    const o = i * STRIDE;
+    data[o] = x / 1023 - 0.5;
+    data[o + 1] = y / 1023 - 0.5;
+    for (let c = 0; c < 3; c++) data[o + 2 + c] = hue(x / 1023, y / 1023, c) * gain;
+    data[o + 5] = 0.0013 + 0.0042 * k ** 2.2;
+    data[o + 6] = rand();
+  }
+  for (let i = 0; i < MOTES; i++) {
+    const o = (N + i) * STRIDE, from = Math.floor(rand() * N) * STRIDE;
+    data.set(data.subarray(from + 2, from + 5), o + 2);
+    data[o] = rand();
+    data[o + 1] = rand();
+    data[o + 5] = 0.002 + rand() * 0.0034;
+    data[o + 6] = rand();
+    data[o + 7] = 1;
+  }
+
+  const pointer = { x: 0, y: 0, on: 0, ex: 0, ey: 0, es: 0 };
+  let u, box, width, height, dpr, start, frame, last = 0;
+
+  function layout() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    width = innerWidth;
+    height = innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    const r = mark.getBoundingClientRect();
+    box = { x: r.left + r.width / 2, y: r.top + r.height / 2, s: r.width };
+    gl.uniform3f(u.V, width, height, box.s);
+    gl.uniform2f(u.C, box.x, box.y);
+    gl.uniform1f(u.D, dpr);
+    gl.uniform1f(u.A, calm ? 0 : 1);
+    if (calm) draw(20);
+  }
+
+  function draw(t) {
+    // pointer eases in and out, nothing snaps
+    pointer.ex += (pointer.x - pointer.ex) * 0.05;
+    pointer.ey += (pointer.y - pointer.ey) * 0.05;
+    pointer.es += (pointer.on - pointer.es) * 0.04;
+    gl.uniform1f(u.t, t);
+    gl.uniform3f(u.P, pointer.ex, pointer.ey, pointer.es);
+    gl.uniform2f(u.T,
+      (pointer.ex * pointer.es + 0.5 * Math.sin(t * 0.17)) * 0.008,
+      (pointer.ey * pointer.es + 0.5 * Math.cos(t * 0.13)) * 0.008);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.POINTS, 0, N + MOTES);
+  }
+
+  function loop(now) {
+    frame = requestAnimationFrame(loop);
+    if (now - last < 15) return; // 60fps ceiling: slow motion gains nothing at 120Hz but heat
+    last = now;
+    start = start || now;
+    draw((now - start) / 1000);
+  }
+
+  function init() {
+    const prog = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, FRAG]]) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      gl.attachShader(prog, sh);
+    }
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return still();
+    gl.useProgram(prog);
+    u = Object.fromEntries(['V', 'C', 'P', 'T', 't', 'D', 'A'].map(k => [k, gl.getUniformLocation(prog, k)]));
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    for (const [name, n, at] of [['h', 2, 0], ['c', 4, 2], ['s', 2, 6]]) {
+      const loc = gl.getAttribLocation(prog, name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, n, gl.FLOAT, false, STRIDE * 4, at * 4);
+    }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.clearColor(0, 0, 0, 0);
+    layout();
+    if (!calm) frame = requestAnimationFrame(loop);
+  }
+
+  addEventListener('resize', layout);
+  const touch = e => {
+    pointer.x = (e.clientX - box.x) / box.s;
+    pointer.y = (e.clientY - box.y) / box.s;
+    pointer.on = 1;
+  };
+  const release = e => { if (e.pointerType !== 'mouse') pointer.on = 0; };
+  addEventListener('pointerdown', touch);
+  addEventListener('pointermove', touch);
+  addEventListener('pointerup', release);
+  addEventListener('pointercancel', release);
+  document.documentElement.addEventListener('pointerleave', () => pointer.on = 0);
+  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); cancelAnimationFrame(frame); });
+  canvas.addEventListener('webglcontextrestored', init);
+  init();
+})();
+</script>
+</body>
+</html>

@@ -35,6 +35,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    touch-action: pinch-zoom;
   }
 
   /* atmospheric haze, 2049-style */
@@ -54,39 +55,37 @@
     to   { opacity: 1;   transform: translateX(1.5%); }
   }
 
-  /* faint grain */
-  body::after {
-    content: "";
+  #dots {
     position: fixed;
     inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    width: 100%;
+    height: 100%;
     pointer-events: none;
-    mix-blend-mode: overlay;
   }
 
   main {
     position: relative;
     text-align: center;
     z-index: 1;
+    padding-inline: 16px;
   }
 
+  /* holds the figure's place; the dots are drawn into this box */
   .mark {
-    width: min(46vh, 78vw);
-    max-width: 460px;
+    width: min(46vh, 74vw);
+    max-width: 520px;
     aspect-ratio: 1;
     margin: 0 auto;
-    background: url("logo.webp") center / cover no-repeat;
-    -webkit-mask-image: radial-gradient(circle at 50% 50%, black 42%, transparent 72%);
-            mask-image: radial-gradient(circle at 50% 50%, black 42%, transparent 72%);
-    animation: breathe 7s ease-in-out infinite;
   }
-  @keyframes breathe {
-    0%, 100% { filter: brightness(0.92) drop-shadow(0 0 25px rgba(224,64,154,0.10)); transform: scale(0.99); }
-    50%      { filter: brightness(1.28) drop-shadow(0 0 70px rgba(245,162,74,0.30)); transform: scale(1.012); }
+  /* no JS or no WebGL: the still mark */
+  .mark.still {
+    background: url("logo.webp") center / 142% no-repeat;
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, black 52%, transparent 72%);
+            mask-image: radial-gradient(circle at 50% 50%, black 52%, transparent 72%);
   }
 
   h1 {
-    margin-top: -1.5rem;
+    margin-top: 2.6rem;
     font-size: clamp(1.1rem, 3.2vw, 1.9rem);
     font-weight: 200;
     text-transform: uppercase;
@@ -94,32 +93,247 @@
     text-indent: 0.85em; /* recenters tracked text */
     color: #e8e2f5;
     text-shadow: 0 0 24px rgba(224, 64, 154, 0.35);
+    animation: track 2.4s cubic-bezier(.16, 1, .3, 1) both;
+  }
+  @keyframes track {
+    from { letter-spacing: 0.45em; text-indent: 0.45em; opacity: 0; }
   }
 
   .present {
     margin-top: 2.2rem;
-    font-size: clamp(0.65rem, 1.4vw, 0.8rem);
+    font-size: clamp(0.75rem, 1.4vw, 0.85rem);
     font-weight: 300;
     letter-spacing: 0.35em;
     text-indent: 0.35em;
-    color: rgba(207, 201, 232, 0.45);
-    animation: fade 5s ease-in-out infinite;
+    color: #cfc9e8;
+    animation: arrive 1.6s ease-out 1.4s both, fade 5s ease-in-out 3s infinite;
   }
+  @keyframes arrive { from { opacity: 0; } to { opacity: 0.65; } }
   @keyframes fade {
-    0%, 100% { opacity: 0.45; }
-    50%      { opacity: 0.9; }
+    0%, 100% { opacity: 0.65; }
+    50%      { opacity: 0.92; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    body::before, .mark, .present { animation: none; }
+    body::before, h1, .present { animation: none; }
+    .present { opacity: 0.8; }
   }
 </style>
 </head>
 <body>
+  <canvas id="dots" role="img" aria-label="Athenema"></canvas>
   <main>
-    <div class="mark" role="img" aria-label="Athenema"></div>
+    <div class="mark still"></div>
+    <script>document.querySelector('.mark').classList.remove('still')</script>
     <h1>Athenema</h1>
     <p class="present">Present.</p>
   </main>
+<script>
+(() => {
+  // Every dot of assets/logo-v3-original.png, regenerate with assets/extract-dots.py
+  const N = 3361, GRID = 7, HUES = "/whU/wlK/xIi/yAV/zUM/18N/2UO/wmB/wpX/xY+/x4b/zgN/1wJ/10I/wmI/w6N/xZ4/xw3/y4U/0MI/y0D/whr/wvy/xnP/xtg/x8f/zYK/zUF/wpx9A3//xPx/xeI/xU5/yAS/yMP/xS+/xXX/xPv/xV//xM3/wot/wgt/w7Q/w3W/wft/xA9/w0e/xgU/xsT", DOTS = "AAIBAwMHFAABAwICAAEAAAQBAAEAAQACAQABAwIAAQABAAAAAQABAAABAAIBAQEAAAEAAAABAAAAAgABAQABAAAAAQAAAAAAAQAAAAIAAAABAAAAAQAAAAABAAAAAQAAAQAAAAIAAAEAAAAAAAEAAAABAAABAAEAAAAAAAIAAAAAAAEAAAAAAAEAAAAAAQAAAQAAAAAAAAAAAQAAAAAAAAAAAgAAAAAAAAEAAQAAAQAAAQAAAAAAAAABAAAAAAIAAAEBAAABAAABAAAAAAABAAACAAAAAAABAAAAAQAAAAAAAAAAAQAAAAEAAQAAAAAAAgAAAAEAAAAAAAABAAAAAAEAAAABAAAAAAAAAAABAAAAAAIAAAAAAAAAAQAAAAEAAAAAAAEAAAAAAAEAAAAAAAAAAAEAAAAAAAAAAgAAAAAAAAABAAABAAAAAAABAAAAAAAAAAEAAAAAAAAAAAABAAAAAAAAAAACAAABAAAAAQAAAAAAAAABAAAAAAABAAAAAAAAAAABAAAAAAIBAAAAAQAAAAAAAAEAAAAAAAABAAAAAAAAAQACAAAAAAEAAAAAAAAAAQAAAAAAAQAAAAAAAAAAAQABAAAAAgAAAAAAAAEAAAAAAAEAAAAAAAEAAAAAAAEAAAEAAAAAAAAAAAIAAAAAAQAAAAAAAAEAAAAAAQAAAQAAAAAAAAABAAAAAAAAAAACAAAAAAABAAAAAAEAAQAAAAAAAQAAAAAAAQIAAAAAAAEAAAABAAAAAAEAAAAAAAAAAAEBAAAAAAIAAAAAAQAAAAAAAAAAAAEAAQAAAAABAAAAAAABAAAAAAACAAAAAAAAAAACAAAAAAEAAAAAAAEAAAAAAAEAAAAAAAAAAAAAAAIAAAEAAAAAAAEAAAAAAQAAAAABAAAAAAAAAAAAAAEAAAAAAAACAAAAAAAAAQAAAQAAAAABAAAAAAAAAAAAAAAAAAAAAQABAAAAAAAAAAIAAAAAAAEAAAEAAAAAAAAAAAEAAAABAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAQABAAAAAAAAAQAAAAAAAAAAAQAAAAAAAgAAAAABAAAAAAAAAQAAAAAAAAEAAAAAAAAAAAABAAAAAAAAAAAAAQAAAAIAAAAAAAAAAAEAAAAAAQAAAAAAAAEAAAAAAAAAAQAAAAEAAAAAAgAAAAAAAAAAAAEAAAAAAQAAAAABAAAAAQAAAAAAAQAAAAIAAAAAAAABAAAAAQAAAAABAAABAAAAAAAAAAEAAAAAAgAAAAAAAAEAAAEAAAABAAAAAAAAAQAAAAABAAAAAgAAAAEAAAABAAAAAAEAAAAAAQAAAAAAAAEAAAAAAgAAAAAAAQAAAAABAAAAAAAAAAAAAQAAAAAAAAEAAAAAAAAAAAABAAACAAAAAAAAAAABAAAAAAAAAAEAAAAAAAEAAAAAAAAAAQAAAAAAAAAAAAEAAAAAAAACAAAAAAEAAAAAAAEAAAAAAAABAAAAAAEAAAAAAAAAAQAAAAAAAgAAAAAAAAAAAQAAAAABAAAAAAABAAAAAAABAAEAAAAAAgAAAAABAAAAAAAAAAAAAAEAAAABAAAAAAAAAQAAAAAAAAEAAAAAAAACAAAAAAAAAAEAAAEAAAAAAAEAAAAAAAEAAAAAAQAAAAAAAAAAAAACAAAAAAABAAAAAAAAAQAAAAAAAQAAAAABAAAAAAAAAAEAAAAAAAAAAAIAAAAAAAAAAAAAAQAAAQAAAQAAAAAAAAAAAQAAAAEAAAACAAAAAAAAAQAAAQAAAAAAAQAAAAAAAAAAAQAAAAABAAACAAAAAQAAAAAAAAABAAAAAQAAAAAAAQAAAAABAAAAAAAAAAAAAAIAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAQAAAAABAAAAAAAAAAAAAAEAAAAAAgAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAQAAAQAAAAAAAAIAAAAAAQAAAQAAAAAAAAAAAAAAAQAAAAABAAABAAAAAAAAAgAAAAEAAAAAAQAAAAABAAAAAAAAAAEAAAAAAQAAAAAAAAIAAAAAAAAAAQAAAAABAAAAAAABAAAAAAAAAAEAAAAAAAABAAACAAAAAAAAAAABAAAAAQAAAAEAAAAAAAAAAQAAAQAAAAIAAQEAAAAAAAEAAAABAAABAAACAAAAAQAAAAAAAQAAAAAAAQAAAAAAAQAAAAEAAAACAAAAAQAAAAABAAAAAAAAAAEAAAAAAAEAAAAAAQAAAAAAAAAAAgAAAAABAAAAAAAAAQAAAAEAAAAAAAABAAAAAAABAAAAAgAAAAEAAAAAAAABAAABAAAAAAABAAAAAQAAAAAAAgAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAEAAQAAAgAAAAAAAAAAAQABAAAAAAAAAQAAAAAAAAEAAAEAAAIAAAAAAAAAAAAAAQAAAAABAAAAAAEAAAAAAAABAAABAAAAAgAAAAAAAQAAAAAAAAEAAAABAAAAAQAAAAEAAAIAAAAAAAAAAAEAAAAAAQAAAAAAAQEAAAEAAAAAAAAAAAAAAgAAAAAAAAAAAQAAAAEAAAAAAAABAAEAAQAAAAAAAAAAAAACAAAAAQAAAAAAAAEAAAAAAAAAAQABAAAAAAEAAAACAAAAAAEAAAAAAAAAAAAAAAEAAAABAAAAAAAAAQAAAAAAAAEAAAAAAgAAAAAAAAAAAAAAAAEAAAAAAQAAAAABAQAAAAAAAAEAAAAAAAAAAgAAAQAAAAAAAAABAAABAAAAAAAAAAEAAAAAAAEAAAAAAgAAAAAAAQAAAAAAAAAAAAEAAAEAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAAACAAAAAAEAAAAAAQAAAAABAAAAAAEAAAEAAAAAAAACAAAAAAABAAAAAAAAAAEAAAABAAAAAAABAAAAAAAAAQAAAAACAAAAAAAAAQABAAAAAAAAAAEAAAEAAAABAAAAAAIAAQAAAAAAAAABAAAAAAAAAQAAAQAAAAAAAAAAAQACAAABAAAAAAABAAAAAAAAAAEAAAAAAAABAAEAAAIAAAEAAAAAAQAAAAAAAAEAAAAAAAABAAABAAAAAAAAAgAAAAABAAAAAAABAAAAAAAAAQAAAAEAAAAAAQACAAAAAAABAAAAAAEAAAABAAAAAAABAQAAAAAAAAAAAAACAAAAAAEAAAAAAAABAAABAQAAAAAAAQAAAAAAAAIAAAEAAAEAAAAAAAEAAAAAAQAAAAEAAAACAAAAAgABAAAAAAAAAAAAAQAAAQAAAAACAAAAAAEAAAEBAAABAAAAAQAAAAIAAQAAAQAAAQAAAAABAAABAAAAAAADAAAAAQAAAAABAAAAAQAAAAAAAQAAAgAAAAEAAQAAAAAAAQAAAAAAAgAAAAIAAAAAAAAAAQAAAAABAAAAAAEAAAABAAAAAAAAAQAAAAAAAgEAAQAAAQEAAAAAAAAAAAADAAABAAAAAQAAAQAAAAAAAQEAAAAAAgAAAAEAAAEAAAABAAABAAABAAIBAAABAAAAAAEAAAAAAAAAAQAAAAECAQAAAQAAAAAAAAAAAQAA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1sqfKbrnfbEtrnvH18evPa/rs5Mx/YbOl6PDWcJSz9MqkttdbVabn+PLo7GxdWKXx8PLu62GbnKTu0UW59uz3+t9PWl6m6u/25/Ds+N/YG5Oy6fD/VH165Glos+3ckJWPtOvk6PPv1q7l5OvsbE+Qo9IqWltNkZepqKrjZdJUsffm446LpfDp3Gx+VXr3229dr7Sr5erp22J8rufRd7mg6vnYTGV9seXXUV16pqu0rub08e3MPmO8rrGb9/nnbKqvpexsjpCq535+VXSl8vH59OXaYWxsuq+t4Wprma/o88tlu7JZt4yn7B13dmNsbG+4nNnm9eju5fO15ledpKX44+/sUaWympKnbqv5bEtpkK+s7OT/bHDq9mZrrLfq+N5sZnG0ppf77XRrYGdSs6rpd2N7raTk+fOv7XJsWIuTpv9hn7my6d728vlxdGxs9+pcc7X292ZZXammrNIYZF22r7isP2y05Oju+ujv7DB7a3Gprevu8OVRp/PYZmpNvKak5Oj2Yk25o81Lq6qx5OrfS7qmprft8P1stbi9fG3y5sw9ZGxLcqmr7fH2Y1t2q+Wh7+fp6GmopetsdO7q6Nkt8fHsXl+Zo6Tu12xy5Nc5eXTw7+Ts0yt4bEtsee7Ln5yYuOAuXGxTsuzsZNzibunt+HJMmpCv5+pnS7Dv61tkceMmYK7s9fnl/2xebdrRLXV15PNqTJSy5vnsNFuo89Z42PX68Ow5b21p8XdKfbylvKusqdxkZV6j+PrnNB1sb660lJWw8fntzxE5WWhrZnpp8lR+qa+vk5j2a6eymeflDGRac46k5fVydF9ooL2T4+b3LmhosvPy6Ftrqoy2dWqvuPPTZ1FUqufR1j1ldOfsCTUsbqStsORReHus7Oo2ZHpbi6Xd6ewmpqay74yW7O/l8W5rTXyk7Dn0JHJsa/YkWWuj2VpfrrmeoOvz6M7lXGT5+mxQmbOu5tIgPX1YprHCKmhJT6q5rFOR7Pb58ufyTFVsNx1LdaSTeKe4iMzsMWSZ4sMMbH2p7u/46O/k+FpsUqyYwzcxGmi6qOhvcneymd5sk+rK/HKsrLjt+e74TGpmuZDs5vPNGSYZaVVVjrKspN13k9pspewobKyk7Onq6NF9aa/6WKLv+StWXJGUpuBsXN8sZPfr5P1vbHJnlLL13OlYaPnm1CRX7DklaOwUdnjv5e7kzihvZucsLKye5eV3TGaspiwjPUmtu76njK3fSFJ1qafs1trsJ2NmZvVdY3Bskar35fhyY2ih2S9mrKmcmKbw8OfcISxsr+Rme36k2ytaZ3bt9Ojmc3Fbe5Gz7+hga2v45+F9sd0PcHBRoOfac1VZvKR35uh1a2R9b09NXHXl+e90a15prK3q7Btwp7Xy5+wIX7jyb3Vrrec4fKLO6nxLiqmg9OXWc6Xw5MYvcmpJq6r5dnFoa19yuK9ps6mv5l5MvKiw/nBmpfnz59DEJS1ntbG5tnqqqm56r7CZ7O3p6Atoeqownfrcc3t6pbX269cmo/FSmu/7Umwhentk7OvSKkuq1g2621NnbHSk1fyku6fv5s0fbHWJ7NY3fJTT6M9c7ffGLJ3h5bqUp5dNe3hsVixZc6a4ru/7Z3VwdunlWqyspuwwKAt3equrrI1Tdmlq1xN4lKWsnvSYtPnWc3FmuZXn8rGOnLHI0wpz9dBHebffCWy18e/r1Emz7Dd8ubfw+H2mrNwvcUZvrPGt5e50U1Gs6eX21CV6V22s6e74YlakvYvyre95pY80eFJ8o9rq4vpm0jJ5bKKoq+MkfJOfuK/sBnuTGPLQaGV3Rmap7eT318dXrZHcxCG8ucbsFDp7ZqyoqXuo3GTy7+Vke3Gsnuxmqaysqfn1Z5zv66Xt5ORqoc36aabhJn1ms7D2+e/7amxsrulic7D18vnlLFSCLH97tPX5+uvr7tQacWZvX/Xv6t4lpO7sNmZ+b/Di79fWS6EnbGRsmJHz6evx81mf3fl1Ulat7OzsJHxptrL36NdabClste7qXlnVxg4wYFqXLVxwd1fj7+rz9urWk/fl+Xhl7Pnb68YRWJK6l+roZFV8mKo0U3NpW4qk9Pf68uT2fVmX7vJ5c9/p4WRtmJuIq+fgb3hToO758+Vmur5ccE+Z5eXh/Fnr8yZgcX2X09j6e1Ck9u7sFHtVqNd+bJnv79QWd2VWvpLn2+//ZubnNntSVoWr9fjq3yNkeF5YmqqmhKLY5H5uW9vj7luf4+7/d1iFpduO6/Xr/Zbr3Nzml9HrOVFg5e33+3N1bJju3SxtWVD59evsoe/q4GZa3+XlyBNnVWyn5PZnbGSl7AovYOX46fqs0XRhbJKg9+zTa+nsrJrl8XxYpPXk3eNSp5bj4ezq5hApS1BQ5dvq+s05XkislNTT8exb/rnt0jteXJ7P/GtsbayO1OTWKWVqqOn5wqTl2+7LVKzmbHqs591pV7Wsrvn/Ymiwr5Hq0RNb5HasgpD46OxP6uzl2Duq4tXv7CF6dabt7ORgW7yQbGHy+s4+RCRlrO767X9c7ubWO3tx1RtqjoWw7GZpeWxpf1NFrffs52xsiu7KLGxL9vPq6iDf6iVbf4zx3cw2dVZsa2b+ZurkX2TkcFhhavLrZ17X3MYPe1BbGGHt309HsMqj4mx/bIfd2t7b89YjYv1XW+zq5XJaUKnj5Obpv1Cj42fz8P1lUZ/a8c5daexRatVsfoja2tP47AWc0vnv91hrWMMYWmpkzmLn8/9ySafv5uYf+eBEl9jTZ9IWbE/U8NV/VKPi6c5Ma+//aWFsiJLe+ONaWlrX4m5ImvXLD0OX5GxpUJbe6s1mWurx79rZ+cgrWv9dY0qKn+Lk9/np0GLtyFli3txWW2w6SMr279pqJVj17MgFiNHoWernZU307E+N6Prx6D1VXXRI10Ka1ODMU3dsqPfw5shaU+rg22Je4exieWdi5/T55NlaZ1pj1+FtW+ZzXeFGmu748eji6st7e1zJbHZu7VZ6V7Hw5OZYTJTc/WHx+Ox7d2V2VeLoPWJGGlJDktzo8GBme0qz+eNsUlFWkswoLCUm5+TnXknPyKnYfGzz6eR+ZRZgUexs3Ntq4drIR5Wg8uXsEEtLTYNgUEib/nxskpTp5eNLcGjZ8ujVU4aSj4fw7Vfm6NJWYluy1VRIjK78UK/11CWk58WPj/Dn9Fqg7E5YrePsdGxN9/HmzU2Om9/j21+LXpURnJL27Eu56eKR1M+u9M89WavoxiFRoKHl8Umho97r5dQXWGOu7Gx/Rp2lt9dYVUpKqpvi0LHIqqDn5+bSZ5bv2Vtzurirr/nPULmn58h8c6DsyixDWKS6nN9MSniyrub8eqnm9PLsXK7f6OvoYGp0+bDcufHsb1a0+ej58M4iUbXnEVW579a2s+x5+fflwxKUZGXhWWC+eqxEn1uVZGSMhJm8k0ROVGpKWp+Mil59XrCRWovnMU5Ua2BeS3yK7GhK7FV+VaeMisliiaG/bJi8pX5gSHNdUVJli1m8un9kjkZLGFRVam9PVZqfqJBWvKxRmntJY6IPYKa3bE5+S7yKSKSHw9dsZ6xdWKxddKisC3Bhklmkf1+jT6yfSUhtomesZVysrG1YS3isrGxQU0e7paOyV2mkb7SVbHpspohjmFSmpE9+fKSGXVlLqFWsqaSGsaNsdU1TaLuihGxLc6uZSoycV6tSSbSNUYZRqI+TbEKcbaC4p45ukUiZtrqjk1escIWZQ6ifrFisuqufbGWouaea0ZCsZYCFpJdyvrSwj2SErKe5hawfhZKsqKyrgYGvrIysrIdDq7qom4WsoHKVnIqqnYudgaOsypaGqKKj0OOUq4G";
+
+  const VERT = `
+    attribute vec2 h;   // home: figure units, -.5 to .5 (motes: viewport 0 to 1)
+    attribute vec4 c;   // rgb, radius in figure units
+    attribute vec2 s;   // seed 0..1, mote flag
+    uniform vec3 V;     // viewport w, h, figure scale (px per unit)
+    uniform vec2 C;     // figure centre, px
+    uniform vec3 P;     // pointer in figure units, strength
+    uniform vec2 T;     // parallax
+    uniform float t, D, A; // seconds, device pixels per css pixel, motion amount
+    varying vec3 v;
+    varying float heat;
+    const float TAU = 6.28318;
+    void main() {
+      float seed = s.x, b, px_r, dust = 1. - smoothstep(.0022, .0042, c.a);
+      vec2 p;
+      if (s.y > .5) {
+        vec2 q = fract(h + vec2(.0035 - seed * .007, -.006 - seed * .006) * t);
+        p = q * V.xy + 14. * vec2(sin(t * .13 + seed * 80.), cos(t * .11 + seed * 50.));
+        b = smoothstep(0., .08, q.y) * smoothstep(1., .92, q.y) * smoothstep(0., .08, q.x) * smoothstep(1., .92, q.x);
+        b *= (.75 + .45 * sin(t * (.2 + seed * .3) + seed * 40.)) * smoothstep(.5, 3.5, t);
+        px_r = c.a * V.z;
+      } else {
+        // condense: arrive from a loose cloud, most of the travel in the first half second
+        float e = clamp((t - seed * .3) / 1.4, 0., 1.);
+        e = 1. - pow(1. - e, 4.);
+        float a = seed * 917.;
+        vec2 home = h + (1. - e) * (h * .9 + (.12 + .3 * fract(seed * 13.)) * vec2(cos(a), sin(a)));
+
+        // the profile holds, the hair flows: looser the further back from the face
+        float loose = smoothstep(.22, -.42, h.x + .25 * h.y);
+        vec2 q = h * 3.2;
+        vec2 flow = vec2(
+          sin(q.y + t * .29) + .55 * sin(q.y * 2.1 - t * .21 + q.x),
+          cos(q.x * 1.3 + t * .25) + .55 * sin(q.x * 2.3 + q.y + t * .17));
+        p = home + A * flow * (.001 + .012 * loose) * (1. + dust);
+        p += A * .0016 * (1. + 2.2 * dust) * vec2(sin(t * (.35 + seed * .5) + seed * 40.), cos(t * (.3 + seed * .5) + seed * 90.));
+
+        // a share of the dust lets go, drifts up and away, and condenses back
+        if (dust > .5 && fract(seed * 29.) < .12) {
+          float life = fract(t / (19. + 14. * fract(seed * 7.)) + seed * 3.);
+          vec2 dir = normalize(vec2(-.55 - .5 * fract(seed * 11.), -.75 + fract(seed * 17.)));
+          p += A * dir * life * life * (.04 + .14 * loose) * smoothstep(1., .94, life) * smoothstep(0., 2.5, t);
+        }
+
+        // depth
+        p += A * T * (.35 + 1.1 * fract(seed * 23.)) * (1. + .6 * loose);
+
+        // part around the pointer
+        vec2 g = p - P.xy;
+        p += A * g / (length(g) + .02) * .05 * P.z * exp(-dot(g, g) / .022) * (1. + dust);
+
+        p = C + p * V.z;
+
+        // a slow wave of light, the old 7s breath, travels from the face back through the hair
+        float w = .5 + .5 * sin(TAU * t / 7. + h.x * 3. + h.y * 1.2);
+        b = mix(1., mix(.78, 1.22, w) * (1. + dust * .4 * sin(t * (.5 + seed) + seed * 60.)), A) * smoothstep(0., .55, e);
+        px_r = max(c.a * V.z, .55);
+      }
+      v = c.rgb * b;
+      heat = b * smoothstep(.0018, .0048, c.a);
+      gl_Position = vec4(p / V.xy * vec2(2., -2.) + vec2(-1., 1.), 0., 1.);
+      gl_PointSize = min((px_r * 8. + 3.) * D, 64.);
+    }`;
+
+  const FRAG = `
+    precision mediump float;
+    varying vec3 v;
+    varying float heat;
+    void main() {
+      float r2 = dot(gl_PointCoord - .5, gl_PointCoord - .5) * 4.;
+      if (r2 > 1.) discard;
+      float edge = 1. - r2;
+      vec3 col = v * (exp(-r2 * 44.) * 1.5 + (.05 + .16 * heat) * exp(-r2 * 5.) * edge)
+               + mix(v, vec3(1.), .4) * heat * exp(-r2 * 120.) * .8;
+      gl_FragColor = vec4(col, max(col.r, max(col.g, col.b)));
+    }`;
+
+  const canvas = document.getElementById('dots');
+  const mark = document.querySelector('.mark');
+  const still = () => mark.classList.add('still');
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const gl = canvas.getContext('webgl', { antialias: false, powerPreference: 'low-power' });
+  if (!gl) return still();
+
+  const bytes64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+  const bytes = bytes64(DOTS), hues = bytes64(HUES);
+  // colour is a function of position: bilinear lookup in a coarse grid over the figure
+  const hue = (x, y, c) => {
+    const gx = x * (GRID - 1), gy = y * (GRID - 1), ix = Math.min(gx | 0, GRID - 2), iy = Math.min(gy | 0, GRID - 2);
+    const fx = gx - ix, fy = gy - iy, at = (a, b) => hues[(b * GRID + a) * 3 + c] / 255;
+    return (at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy) + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy;
+  };
+  // planes, sorted by y: dy | x low | x high and weight
+  const MOTES = 80, STRIDE = 8, data = new Float32Array((N + MOTES) * STRIDE);
+  let y = 0, seed = 0.5;
+  const rand = () => (seed = (seed * 9301 + 0.49297) % 1); // seeded: same field every load
+  for (let i = 0; i < N; i++) {
+    const m = bytes[i + N * 2], k = (m >> 2) / 63;
+    y += bytes[i];
+    const x = bytes[i + N] | ((m & 3) << 8);
+    const gain = 0.1 + 0.9 * k ** 2.2;
+    const o = i * STRIDE;
+    data[o] = x / 1023 - 0.5;
+    data[o + 1] = y / 1023 - 0.5;
+    for (let c = 0; c < 3; c++) data[o + 2 + c] = hue(x / 1023, y / 1023, c) * gain;
+    data[o + 5] = 0.0013 + 0.0042 * k ** 2.2;
+    data[o + 6] = rand();
+  }
+  for (let i = 0; i < MOTES; i++) {
+    const o = (N + i) * STRIDE, from = Math.floor(rand() * N) * STRIDE;
+    data.set(data.subarray(from + 2, from + 5), o + 2);
+    data[o] = rand();
+    data[o + 1] = rand();
+    data[o + 5] = 0.002 + rand() * 0.0034;
+    data[o + 6] = rand();
+    data[o + 7] = 1;
+  }
+
+  const pointer = { x: 0, y: 0, on: 0, ex: 0, ey: 0, es: 0 };
+  let u, box, width, height, dpr, start, frame, last = 0;
+
+  function layout() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    width = innerWidth;
+    height = innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    const r = mark.getBoundingClientRect();
+    box = { x: r.left + r.width / 2, y: r.top + r.height / 2, s: r.width };
+    gl.uniform3f(u.V, width, height, box.s);
+    gl.uniform2f(u.C, box.x, box.y);
+    gl.uniform1f(u.D, dpr);
+    gl.uniform1f(u.A, calm ? 0 : 1);
+    if (calm) draw(20);
+  }
+
+  function draw(t) {
+    // pointer eases in and out, nothing snaps
+    pointer.ex += (pointer.x - pointer.ex) * 0.05;
+    pointer.ey += (pointer.y - pointer.ey) * 0.05;
+    pointer.es += (pointer.on - pointer.es) * 0.04;
+    gl.uniform1f(u.t, t);
+    gl.uniform3f(u.P, pointer.ex, pointer.ey, pointer.es);
+    gl.uniform2f(u.T,
+      (pointer.ex * pointer.es + 0.5 * Math.sin(t * 0.17)) * 0.008,
+      (pointer.ey * pointer.es + 0.5 * Math.cos(t * 0.13)) * 0.008);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.POINTS, 0, N + MOTES);
+  }
+
+  function loop(now) {
+    frame = requestAnimationFrame(loop);
+    if (now - last < 15) return; // 60fps ceiling: slow motion gains nothing at 120Hz but heat
+    last = now;
+    start = start || now;
+    draw((now - start) / 1000);
+  }
+
+  function init() {
+    const prog = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, FRAG]]) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      gl.attachShader(prog, sh);
+    }
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return still();
+    gl.useProgram(prog);
+    u = Object.fromEntries(['V', 'C', 'P', 'T', 't', 'D', 'A'].map(k => [k, gl.getUniformLocation(prog, k)]));
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    for (const [name, n, at] of [['h', 2, 0], ['c', 4, 2], ['s', 2, 6]]) {
+      const loc = gl.getAttribLocation(prog, name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, n, gl.FLOAT, false, STRIDE * 4, at * 4);
+    }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.clearColor(0, 0, 0, 0);
+    layout();
+    if (!calm) frame = requestAnimationFrame(loop);
+  }
+
+  addEventListener('resize', layout);
+  const touch = e => {
+    pointer.x = (e.clientX - box.x) / box.s;
+    pointer.y = (e.clientY - box.y) / box.s;
+    pointer.on = 1;
+  };
+  const release = e => { if (e.pointerType !== 'mouse') pointer.on = 0; };
+  addEventListener('pointerdown', touch);
+  addEventListener('pointermove', touch);
+  addEventListener('pointerup', release);
+  addEventListener('pointercancel', release);
+  document.documentElement.addEventListener('pointerleave', () => pointer.on = 0);
+  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); cancelAnimationFrame(frame); });
+  canvas.addEventListener('webglcontextrestored', init);
+  init();
+})();
+</script>
 </body>
 </html>
